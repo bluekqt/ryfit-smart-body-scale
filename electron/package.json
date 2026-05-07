@@ -1,0 +1,36 @@
+{
+  "name": "ryfit-pcapp",
+  "version": "1.0.0",
+  "description": "RyFit 智能体质分析仪桌面应用",
+  "author": "RyFit",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "build": {
+    "appId": "com.ryfiy.scaleapp",
+    "productName": "RyFit智能体质分析仪",
+    "directories": {
+      "output": "dist"
+    },
+    "extraResources": [
+      {
+        "from": "../dist/app.exe",
+        "to": "backend/app.exe"
+      }
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.13.3"
+  }
+}

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}RyFit 智能体质分析仪{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    {% block content %}{% endblock %}
+
+    <script src="/static/socket.io.min.js"></script>
+    <script src="/static/js/modal.js"></script>
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/status.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

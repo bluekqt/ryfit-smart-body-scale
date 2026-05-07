@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}RyFit 智能体质分析仪{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="header">
+        <h1 id="titleText">⚖️ 智能体重秤</h1>
+        <div class="header-actions">
+            <span id="bleStatusText" class="ble-status-text">🔌 未连接</span>
+            <span class="register-btn" id="registerBtn" onclick="openRegisterModal()" title="需要蓝牙连接">＋ 注册</span>
+            <button class="gear-btn" id="gearBtn" onclick="toggleGearMenu(event)" title="设置">⚙</button>
+        </div>
+        <div class="gear-dropdown" id="gearDropdown">
+            <div class="menu-item" onclick="openDataManager()">💾 数据管理</div>
+            <div class="menu-item" id="autoDeleteMenuItem" onclick="toggleAutoDelete(event)">
+                <span>🧹 同步后清除秤内历史</span>
+                <label class="toggle-switch" onclick="event.stopPropagation()">
+                    <input type="checkbox" id="autoDeleteToggle" onchange="setAutoDelete(this.checked)">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div class="content" id="cardContainer">
+        <div class="empty-state">加载中...</div>
+    </div>
+</div>
+
+<!-- 升级固定用户面板 -->
+<div id="upgradePanel" class="modal-panel">
+    <div class="modal-panel-content">
+        <span class="close-btn" onclick="closeUpgradePanel()">&times;</span>
+        <h3>⬆️ 升级为固定用户</h3>
+        <p style="text-align:center;">请选择空闲槽位（P1-P8）</p>
+        <div class="slot-select" id="upgradeSlotSelect"></div>
+        <button class="btn-primary" onclick="confirmUpgrade()" style="background:#27ae60;">确认升级</button>
+    </div>
+</div>
+
+<!-- 编辑用户面板 -->
+<div id="editPanel" class="modal-panel">
+    <div class="modal-panel-content">
+        <span class="close-btn" onclick="closeEditPanel()">&times;</span>
+        <h3>✎ 编辑用户</h3>
+        <form id="editUserForm">
+            <input type="hidden" id="editUserId">
+            <div class="form-group"><label>姓名</label><input id="editName" required></div>
+            <div class="form-group"><label>身高 (cm)</label><input id="editHeight" type="number" min="50" max="250" required></div>
+            <div class="form-group"><label>年龄</label><input id="editAge" type="number" min="1" max="120" required></div>
+            <div class="form-group"><label>性别</label><select id="editGender"><option value="男">男</option><option value="女">女</option></select></div>
+            <div class="form-group" id="editModeGroup">
+                <label>用户类型</label>
+                <select id="editMode">
+                    <option value="fixed">家庭成员（秤上存储）</option>
+                    <option value="guest_saved">本地存储</option>
+                </select>
+            </div>
+            <div class="form-group" id="editSlotGroup" style="display:none;">
+                <label>选择编号 (P1–P8)</label>
+                <div class="slot-select" id="editSlotSelect"></div>
+                <input type="hidden" id="selectedEditSlot" value="">
+            </div>
+            <div style="display:flex; gap:8px; margin-top:12px;">
+                <button type="button" class="btn-primary" onclick="saveEditUser()" style="flex:1;">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 注册弹窗 -->
+<div id="registerModal" class="modal-panel">
+    <div class="modal-panel-content">
+        <span class="close-btn" onclick="closeRegisterModal()">&times;</span>
+        <h3>注册新用户</h3>
+        <form id="registerForm">
+            <div class="form-group"><label>姓名</label><input name="name" placeholder="姓名" required></div>
+            <div class="form-group"><label>身高 (cm)</label><input name="height" type="number" value="170" min="50"
+                    max="250" required></div>
+            <div class="form-group"><label>年龄</label><input name="age" type="number" value="30" min="1" max="120"
+                    required></div>
+            <div class="form-group"><label>性别</label><select name="gender">
+                    <option value="男">男</option>
+                    <option value="女">女</option>
+                </select></div>
+            <div class="form-group">
+                <label>存储方式</label>
+                <div class="radio-group">
+                    <label><input type="radio" name="mode" value="fixed" checked><span class="mode-label">🧑‍🤝‍🧑
+                            家庭成员</span></label>
+                    <label><input type="radio" name="mode" value="guest_saved"><span class="mode-label">💾
+                            仅本地保存</span></label>
+                </div>
+                <p class="mode-desc">家庭成员数据可同步到秤，离线自动识别</p>
+            </div>
+            <div class="form-group" id="slotArea">
+                <label>选择编号 (P1–P8，灰色表示已占用)</label>
+                <div class="slot-select" id="slotSelect"></div>
+                <input type="hidden" name="slot" id="selectedSlot" value="">
+            </div>
+            <button type="submit" class="btn-primary">注册</button>
+        </form>
+    </div>
+</div>
+
+<!-- 游客弹窗 -->
+<div id="guestModal" class="modal-panel">
+    <div class="modal-panel-content">
+        <span class="close-btn" onclick="closeGuestModal()">&times;</span>
+        <h3>游客快速称重</h3>
+        <form action="/guest_measure" method="POST">
+            <div class="form-group"><label>身高 (cm)</label><input name="height" type="number" value="170" min="50"
+                    max="250" required></div>
+            <div class="form-group"><label>年龄</label><input name="age" type="number" value="30" min="1" max="120"
+                    required></div>
+            <div class="form-group"><label>性别</label><select name="gender">
+                    <option value="男">男</option>
+                    <option value="女">女</option>
+                </select></div>
+            <button type="submit" class="btn-primary" id="guestSubmitBtn" style="background:#e67e22;">开始测量</button>
+        </form>
+    </div>
+</div>
+
+<!-- 数据管理面板 -->
+<div id="dataManagerPanel" class="modal-panel">
+    <div class="modal-panel-content">
+        <span class="close-btn" onclick="closeDataManager()">&times;</span>
+        <h3>📂 数据管理</h3>
+        <div style="display:flex; flex-direction:column; gap:12px;">
+            <button class="btn-primary" onclick="exportCSV()" style="background:#27ae60;">📥 导出 CSV</button>
+            <button class="btn-primary" onclick="document.getElementById('importCSV').click()"
+                style="background:#3498db;">📤 导入 CSV</button>
+            <button class="btn-primary" onclick="confirmResetAll()" style="background:#e74c3c;">🔄 重置所有数据</button>
+            <input type="file" id="importCSV" accept=".csv" style="display:none" onchange="handleImportCSV(event)">
+        </div>
+    </div>
+</div>
+
+<!-- 导入用户选择面板 -->
+<div id="importUserPanel" class="modal-panel" style="display:none;">
+    <div class="modal-panel-content">
+        <span class="close-btn" onclick="closeImportUserPanel()">&times;</span>
+        <h3>📥 选择导入用户</h3>
+        <div id="importUserList" style="max-height:300px;overflow-y:auto;"></div>
+        <div style="text-align:center;margin-top:16px;">
+            <button class="btn-primary" onclick="confirmImportLocal()" style="background:#3498db;">➕ 创建本地用户</button>
+        </div>
+    </div>
+</div>
+
+<!-- 开发者面板 -->
+<div id="dangerModal" class="modal-panel">
+    <div class="modal-panel-content danger-panel">
+        <span class="close-btn" onclick="closeDangerModal()">&times;</span>
+        <h3>⚙️ 开发者面板</h3>
+        <div class="dev-warning">⚠️ 以下操作为高级功能，仅限开发者使用。<br>错误操作可能导致设备无法正常工作，请谨慎执行。</div>
+        <div class="danger-item">
+            <span>修改设备码</span>
+            <div>
+                <input type="text" id="newDevCode" placeholder="6位十六进制" maxlength="6" style="width:100px;">
+                <button class="btn-danger" onclick="confirmWriteDevCode()">写入</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/app.js"></script>
+{% endblock %}

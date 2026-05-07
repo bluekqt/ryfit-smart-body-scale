@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}{{ user.name }} 的测量{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/user.css">
+{% endblock %}
+
+{% block content %}
+<div id="user-data"
+     data-height="{{ user.height }}"
+     data-age="{{ user.age }}"
+     data-gender="{{ user.gender }}"
+     data-user-id="{{ user_id }}"
+     data-auto-mode="{{ 'true' if auto_mode else 'false' }}"
+     style="display:none"></div>
+<script>
+    if (typeof dragEvent === 'undefined') { var dragEvent = null; }
+    const ud = document.getElementById('user-data').dataset;
+    const userCfg = { height: parseInt(ud.height), age: parseInt(ud.age), gender: ud.gender };
+    const userId = ud.userId;
+    const isGuest = userId === 'guest';
+    const autoMode = ud.autoMode === 'true';
+</script>
+
+<div class="container">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <a href="/" class="back-btn">← 返回首页</a>
+        <span id="bleStatusText" class="ble-status-text disconnected">🔌 未连接</span>
+    </div>
+    <h1>📊 {{ user.name }} ({{ user.height }}cm, {{ user.age }}岁, {{ user.gender }})</h1>
+
+    <div id="statusArea" class="status-area">
+        <div id="statusText" class="status-text">等待蓝牙连接...</div>
+        <div id="statusHint" class="status-hint">请确保体脂秤已上电</div>
+    </div>
+
+    <div id="analysisArea" class="analysis-section" style="display: none;">
+        <h3>📈 最新测量 & 分析报告</h3>
+        <div id="summaryCards" class="data-summary"></div>
+        <div id="barCharts" class="analysis-grid"></div>
+        <button class="remeasure-btn" id="remeasureBtn" onclick="requestRemeasure()">🔄 再次测量</button>
+    </div>
+
+    {% if user.mode != 'test' %}
+    <h3>📜 历史记录</h3>
+    <div class="table-wrapper" style="max-height: 420px; overflow-y: auto; border: 1px solid #ddd; border-radius: 8px;">
+        <table id="historyTable">
+            <thead class="sticky-header">
+                <tr>
+                    <th style="width: 40px;"><input type="checkbox" id="selectAllCheckbox" title="全选" onclick="toggleSelectAll()" style="margin: 0;"></th>
+                    <th>时间</th>
+                    <th>体重</th>
+                    <th>BMI</th>
+                    <th>体脂</th>
+                    <th>水分</th>
+                    <th>肌肉</th>
+                    <th>骨量</th>
+                    <th>基础代谢</th>
+                    <th>皮下脂肪</th>
+                    <th>内脏脂肪</th>
+                    <th>身体年龄</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+    <div style="text-align: center; margin-top: 8px;">
+        <button id="deleteSelectedBtn" onclick="confirmDelete()" disabled
+            style="padding: 6px 20px; background: #e74c3c; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
+            删除选中
+        </button>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/user.js"></script>
+{% endblock %}
