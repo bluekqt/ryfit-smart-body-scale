@@ -5,7 +5,8 @@ from flask import Flask, render_template, request, redirect, url_for, jsonify, R
 from flask_socketio import SocketIO
 from models.database import init_db
 from models.user_dao import (
-    get_all_users, get_user_by_id, add_user, delete_user, update_user_slot,update_user_mode,update_user_all
+    get_all_users, get_user_by_id, add_user, delete_user, update_user_slot,
+    update_user_mode, update_user_all
 )
 from models.measurement_dao import (
     get_measurements_for_user,
@@ -16,34 +17,19 @@ from models.measurement_dao import (
 )
 from models.settings_dao import get_settings, set_setting
 import ble
-from ble.event_bus import subscribe, emit as ble_emit
 
 # ---- 初始化应用 ----
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading')
 init_db()
 
-# ---- 转发蓝牙事件到 WebSocket ----
-def forward_ble_event(event_name):
-    """将事件总线的事件转发到 WebSocket"""
-    def handler(**kwargs):
-        socketio.emit(event_name, kwargs)
-    return handler
-
-# 注册事件转发
-subscribe('ble_state', forward_ble_event('ble_state'))
-subscribe('measurement_progress', forward_ble_event('measurement_progress'))
-subscribe('packet1', forward_ble_event('packet1'))
-subscribe('full_result', forward_ble_event('full_result'))
-subscribe('slot_info', forward_ble_event('slot_info'))
-subscribe('occupied_slots_update', forward_ble_event('occupied_slots_update'))
-subscribe('auto_redirect', forward_ble_event('auto_redirect'))
-subscribe('guest_need_restand', forward_ble_event('guest_need_restand'))
+# ---- 注入 WebSocket 发射器到蓝牙模块 ----
+ble.inject_emitter(socketio.emit)
 
 # ---- 首页 ----
 @app.route('/')
 def index():
-    ble.service.reset_user_state()
+    ble.reset_user_state()
     users = get_all_users()
     return render_template('index.html', users=users)
 
@@ -65,7 +51,7 @@ def user_page(user_id):
             "mode": "test"
         }
         if not auto_mode:
-            ble.switch_user(9, height, age, gender, mode='test')
+            ble.switch_user(9, height, age, gender, mode='test',force=True)
     else:
         user = get_user_by_id(user_id)
         if not user:
@@ -79,14 +65,15 @@ def user_page(user_id):
                 user["age"],
                 user["gender"],
                 user_id=user_id,
-                mode=mode
+                mode=mode,
+                force=True
             )
     return render_template('user.html', user=user, user_id=user_id, auto_mode=auto_mode)
 
 # ---- 游客快速称重 ----
 @app.route('/guest_measure', methods=['POST'])
 def guest_measure_page():
-    ble.service.reset_user_state()
+    ble.reset_user_state()
     height = request.form.get('height', 170, type=int)
     age = request.form.get('age', 30, type=int)
     gender = request.form.get('gender', '男')
@@ -178,7 +165,7 @@ def api_history(user_id):
         })
     return jsonify(mapped)
 
-# ---- 编辑用户信息（固定用户也可降级） ----
+# ---- 编辑用户信息 ----
 @app.route('/api/edit_user', methods=['POST'])
 def edit_user():
     data = request.get_json()
@@ -190,13 +177,12 @@ def edit_user():
     if not user:
         return jsonify({'success': False, 'error': '用户不存在'}), 404
 
-    # 可更新字段
     name = data.get('name', user['name']).strip()
     height = data.get('height', user['height'])
     age = data.get('age', user['age'])
     gender = data.get('gender', user['gender'])
-    mode = data.get('mode', user['mode'])      # 可降级为 guest_saved
-    slot = data.get('slot', user['slot'])      # 通常不变，除非升级
+    mode = data.get('mode', user['mode'])
+    slot = data.get('slot', user['slot'])
 
     try:
         height = int(height)
@@ -208,18 +194,17 @@ def edit_user():
     if mode not in ('fixed', 'guest_saved'):
         return jsonify({'success': False, 'error': '无效的用户模式'}), 400
 
-    # 如果固定用户改为本地用户，需要检查蓝牙是否连接
+    # 固定用户降级为本地用户
     if user['mode'] == 'fixed' and mode == 'guest_saved':
         if ble.is_connected():
-            ble.delete_slot(user['slot'])   # 从秤上移除槽位
+            ble.delete_slot(user['slot'])
         slot = 9
-    # 如果本地用户升级为固定用户，必须同时提供空闲槽位
+    # 本地用户升级为固定用户
     elif user['mode'] == 'guest_saved' and mode == 'fixed':
         new_slot = data.get('slot')
         if not new_slot or int(new_slot) < 1 or int(new_slot) > 8:
             return jsonify({'success': False, 'error': '请提供有效的槽位（1-8）'}), 400
         new_slot = int(new_slot)
-        # 检查槽位占用
         occupied = [u['slot'] for u in get_all_users() if u['mode'] == 'fixed' and u.get('slot') is not None]
         if new_slot in occupied:
             return jsonify({'success': False, 'error': '该槽位已被占用'}), 400
@@ -227,13 +212,9 @@ def edit_user():
             ble.register_user(new_slot, height, age, gender, user_id=user_id, mode='fixed')
         slot = new_slot
     else:
-        # 仅更新信息，保持原槽位和模式
         pass
 
-    # 更新数据库
-    from models.user_dao import update_user_all
     update_user_all(user_id, name, height, age, gender, mode, slot)
-
     return jsonify({'success': True, 'message': '用户信息已更新'})
 
 # ---- 升级本地用户为固定用户 ----
@@ -245,8 +226,6 @@ def upgrade_user():
 
     user_id = data.get('user_id')
     slot = data.get('slot')
-
-    print(f"[升级] 收到请求: user_id={user_id!r}, slot={slot!r}")
 
     if not user_id or not slot:
         return jsonify({'success': False, 'error': '缺少参数'}), 400
@@ -263,13 +242,11 @@ def upgrade_user():
     if user.get('mode') != 'guest_saved':
         return jsonify({'success': False, 'error': '仅可升级本地用户'}), 400
 
-    # 检查槽位占用（本地）
     all_users = get_all_users()
     occupied = [u['slot'] for u in all_users if u['mode'] == 'fixed' and u.get('slot') is not None]
     if slot_int in occupied:
         return jsonify({'success': False, 'error': f'槽位 P{slot_int} 已被占用'}), 400
 
-    # 如果蓝牙已连接，在秤上注册
     if ble.is_connected():
         try:
             ble.register_user(slot_int, user['height'], user['age'], user['gender'], user_id=user_id, mode='fixed')
@@ -277,10 +254,8 @@ def upgrade_user():
             print(f"[升级] 秤上注册失败: {e}")
             return jsonify({'success': False, 'error': f'秤上注册失败: {str(e)}'}), 500
 
-    # 更新数据库
     update_user_slot(user_id, slot_int)
     update_user_mode(user_id, 'fixed')
-
     return jsonify({'success': True, 'message': f'已升级为槽位 P{slot_int}'})
 
 # ---- API：删除指定历史记录 ----
@@ -543,6 +518,17 @@ def handle_select_user(user_id, extra_params=None):
 
 # ---- 启动 ----
 if __name__ == '__main__':
+    import logging
+    from werkzeug.serving import WSGIRequestHandler
+
+    # 自定义请求处理器：只在出现错误时打印请求日志
+    class QuietHandler(WSGIRequestHandler):
+        def log_request(self, code='-', size='-'):
+            # 只输出错误状态码的日志（4xx, 5xx），成功的不输出
+            if isinstance(code, int) and code >= 400:
+                super().log_request(code, size)
+            # 否则什么都不做
+
     threading.Thread(target=ble.start_ble_loop, daemon=True).start()
     print("蓝牙后台线程已启动")
-    socketio.run(app, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True, request_handler=QuietHandler)

@@ -1,7 +1,6 @@
 # ble/protocol.py
 import struct
 import time
-from datetime import datetime
 from . import constants as const
 
 def make_time_sync():
@@ -21,20 +20,21 @@ def make_c0_cmd(slot, height_cm, age, gender):
     gen = 0x01 if gender == "男" else 0x00
     return bytearray([0xC0, slot, h, age, gen])
 
-# -------- 数据包解析器（纯函数，不修改任何全局状态） ----------
+# -------- 数据包解析器（纯函数） ----------
 
 def parse_d2(data):
-    """解析 D2 实时重量包，返回字典或 None"""
+    """解析 D2 实时重量包，格式：D2 + 状态(1) + 重量(2, 大端序)"""
     try:
         if len(data) < 4 or data[0] != 0xD2:
             return None
-        weight = int(data[1:3].hex(), 16) / 10.0
+        # 跳过第2字节的状态标志，取后2字节作为重量（大端序）
+        weight = struct.unpack('>H', data[2:4])[0] / 10.0
         return {'weight': weight}
     except:
         return None
 
 def parse_packet1(data):
-    """解析第一数据包（体重/体脂/水分），返回字段集合或 None"""
+    """解析第一数据包（体重/体脂/水分）"""
     try:
         if len(data) < 14 or not (data[2] & 0x01):
             return None
@@ -58,7 +58,7 @@ def parse_packet1(data):
         return None
 
 def parse_packet2(data):
-    """解析第二数据包（详细体成分），返回字段集合或 None"""
+    """解析第二数据包（详细体成分）"""
     try:
         if len(data) < 14 or (data[2] & 0x01):
             return None
@@ -119,7 +119,7 @@ def parse_fb(data):
     return None
 
 def is_valid_measurement(packet2, packet1_fat, packet1_water):
-    """判断测量数据是否有效（基于第二包和第一包的体脂/水分）"""
+    """判断测量数据是否有效"""
     if packet2 is None:
         return False
     if (packet2.get('muscle', 0) <= 0 and

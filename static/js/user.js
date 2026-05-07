@@ -1,21 +1,45 @@
 // static/js/user.js
-// 测量页逻辑
+// 测量页逻辑 —— 完整测量状态机，由后端事件驱动
 
 const socket = io({ transports: ['polling'], reconnection: true, reconnectionDelay: 500 });
 
 // 监听蓝牙状态
 BleStatus.initSocket(socket);
 
-// 进度提示管理
-let measureErrorTimer = null;
+// 当前测量阶段
+let currentPhase = 'idle';   // idle | weighing | analyzing | done | error
+let weighingTimeout = null;  // 称重超时定时器
 
-function clearMeasureError() {
-  if (measureErrorTimer) {
-    clearInterval(measureErrorTimer);
-    measureErrorTimer = null;
+// 清除称重超时
+function clearWeighingTimeout() {
+  if (weighingTimeout) {
+    clearTimeout(weighingTimeout);
+    weighingTimeout = null;
   }
 }
 
+// 重置称重超时（每次 weight 更新时调用）
+function resetWeighingTimeout() {
+  clearWeighingTimeout();
+  weighingTimeout = setTimeout(() => {
+    // 超时：弹出模态框引导用户重试
+    Modal.confirm({
+      message: '⏰ 测量超时，请点击“再次测量”重试,重新站上秤，保持稳定',
+      confirmText: '再次测量',
+      cancelText: '取消',
+      type: 'warning'
+    }).then((confirmed) => {
+      if (confirmed) {
+        requestRemeasure();
+      } else {
+        // 用户取消，回到待机状态
+        resetToIdle();
+      }
+    });
+  }, 30000);
+}
+
+// 显示状态文字
 function showStatus(msg, hint = '') {
   const statusText = document.getElementById('statusText');
   const statusHint = document.getElementById('statusHint');
@@ -23,44 +47,58 @@ function showStatus(msg, hint = '') {
   if (statusHint) statusHint.innerText = hint;
 }
 
-// WebSocket 事件
+// 重置为等待上秤状态
+function resetToIdle() {
+  currentPhase = 'idle';
+  document.getElementById('statusText').innerText = '⏳ 请站上秤，等待测量完成...';
+  document.getElementById('statusHint').innerText = '蓝牙已就绪';
+}
+
+// 测量进度事件处理
 socket.on('measurement_progress', (data) => {
   const phase = data.phase;
-  clearMeasureError();
+  currentPhase = phase;
 
   switch (phase) {
     case 'weighing':
-      showStatus('📊 正在分析体成分，请勿下秤…', '');
+      // 切换到测量界面（如果还在显示上次报告）
+      document.getElementById('analysisArea').style.display = 'none';
+      document.getElementById('statusArea').style.display = 'block';
+      const w = data.weight ? parseFloat(data.weight).toFixed(1) : '';
+      document.getElementById('statusText').innerHTML = `⚖️ 正在称重  <span style="font-size: 1.5em; font-weight: bold;">${w}</span> kg`;
+      document.getElementById('statusHint').innerText = '请站稳，稳定后自动分析，请勿下秤';
+      resetWeighingTimeout();
       break;
-    case 'analyzing':
-      showStatus('🔬 计算中…', '');
-      break;
+
     case 'done':
-      showStatus('✅ 测量完成', '');
+      clearWeighingTimeout();
       break;
+
     case 'error':
-      showStatus('❌ 测量异常，请重新站上秤', '正在自动重试...');
-      let count = 3;
-      measureErrorTimer = setInterval(() => {
-        count--;
-        if (count > 0) {
-          const statusHint = document.getElementById('statusHint');
-          if (statusHint) statusHint.innerText = `将在 ${count} 秒后自动重试...`;
+      clearWeighingTimeout();
+      // 弹窗引导用户重试
+      Modal.confirm({
+        message: '❌ 测量失败，请点击“重新测量”,重新上秤,保持稳定',
+        confirmText: '重新测量',
+        cancelText: '取消',
+        type: 'warning'
+      }).then((confirmed) => {
+        if (confirmed) {
+          requestRemeasure();
         } else {
-          clearMeasureError();
-          showStatus('⏳ 请站上秤，等待测量完成...', '蓝牙已就绪');
+          resetToIdle();
         }
-      }, 1000);
+      });
       break;
   }
 });
 
 // 完整测量结果
 socket.on('full_result', data => {
+  clearWeighingTimeout();
   const result = data.result;
   console.log('[user.js] 收到 full_result:', result);
   if (!result || (!isGuest && result.user_id != userId)) return;
-  clearMeasureError();
   showResult(result);
   if (!isGuest) loadHistory();
 });
@@ -69,6 +107,14 @@ socket.on('full_result', data => {
 socket.on('guest_need_restand', () => {
   showStatus('请重新站上秤，等待测量完成...', '');
   Modal.show({ message: '已切换游客模式，请重新站上秤', type: 'info', duration: 2000 });
+});
+
+// 蓝牙就绪事件：如果当前不在测量中，恢复 idle 提示
+socket.on('ble_state', (data) => {
+  BleStatus.updateUI(data.state);
+  if (data.state === 'ready' && currentPhase === 'idle') {
+    resetToIdle();
+  }
 });
 
 // ========== 体脂排名计算 ==========
@@ -121,7 +167,7 @@ function getFatRankLevel(fatRank) {
   return { level: '建议关注', class: 'rank-attention' };
 }
 
-// ========== 星级生成引擎（与条形图区间完全对齐） ==========
+// ========== 星级生成引擎 ==========
 function getStarInfo(val, ranges, direction = 'mid') {
   const v = Number(val);
   if (!ranges) return { stars: '⭐⭐⭐⭐⭐', cls: 'stars-5' };
@@ -223,6 +269,7 @@ function drawAnalysis(result, bmi, calcBmr) {
 // 显示分析报告
 function showResult(result) {
   document.getElementById('statusArea').style.display = 'none';
+  document.getElementById('remeasureBtn').style.display = 'inline-block';  // 显示再次测量按钮
   document.getElementById('analysisArea').style.display = 'block';
 
   const h = userCfg.height, a = userCfg.age, g = userCfg.gender;
@@ -395,36 +442,14 @@ async function requestRemeasure() {
     Modal.show({ message: '蓝牙未连接，无法开始测量', type: 'warning' });
     return;
   }
+  clearWeighingTimeout();
   document.getElementById('analysisArea').style.display = 'none';
   document.getElementById('statusArea').style.display = 'block';
-
-  // 先提示请上秤
+  document.getElementById('remeasureBtn').style.display = 'none';  // 隐藏按钮
+  currentPhase = 'idle';
   showStatus('⏳ 请站上秤，等待测量完成...', '蓝牙已就绪');
 
-  // 2 秒内如果体重稳定，秤会自动进入测量，提示会由 measurement_progress 更新
-  // 如果 2 秒后仍未进入测量，说明确实还没站上，保持当前提示即可
-  let measuring = false;
-  const handler = (data) => {
-    if (data.phase === 'weighing') {
-      measuring = true;
-      socket.off('measurement_progress', handler);
-    }
-  };
-  
-  socket.on('measurement_progress', handler);
-
-  socket.on('measurement_reset', () => {
-    clearMeasureError();
-    showStatus('⏳ 请站上秤，等待测量完成...', '蓝牙已就绪');
-  });
-
-  setTimeout(() => {
-    if (!measuring) {
-      showStatus('⏳ 请站上秤，等待测量完成...', '蓝牙已就绪');
-    }
-    socket.off('measurement_progress', handler);
-  }, 2000);
-
+  // 发送强制切换请求
   if (isGuest) {
     await API.forceSwitch({ user_id: 'guest', height: userCfg.height, age: userCfg.age, gender: userCfg.gender });
   } else {
@@ -455,3 +480,11 @@ if (!isGuest) {
   loadHistory();
   if (autoMode) loadHistoryAndShowLatest();
 }
+
+// 监听测量重置事件（后端在 C0 后发送）
+socket.on('measurement_reset', () => {
+  clearWeighingTimeout();
+  document.getElementById('analysisArea').style.display = 'none';
+  document.getElementById('statusArea').style.display = 'block';
+  resetToIdle();
+});

@@ -35,10 +35,12 @@
     </div>
 
     <div id="analysisArea" class="analysis-section" style="display: none;">
-        <h3>📈 最新测量 & 分析报告</h3>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3>📈 最新测量 & 分析报告</h3>
+            <button class="remeasure-btn" id="remeasureBtn" onclick="requestRemeasure()" style="display: none;">🔄 再次测量</button>
+        </div>
         <div id="summaryCards" class="data-summary"></div>
         <div id="barCharts" class="analysis-grid"></div>
-        <button class="remeasure-btn" id="remeasureBtn" onclick="requestRemeasure()">🔄 再次测量</button>
     </div>
 
     {% if user.mode != 'test' %}
