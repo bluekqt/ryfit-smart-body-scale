@@ -1,6 +1,6 @@
 // electron/main.js
-const { app, BrowserWindow,screen } = require('electron');
-const { spawn } = require('child_process');
+const { app, BrowserWindow, screen } = require('electron');
+const { spawn, exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -75,11 +75,17 @@ function startPythonBackend() {
     return checkServerReady();
 }
 
-// ---------- 杀死后端进程 ----------
+// ---------- 杀死后端进程（强制进程树） ----------
 function killPythonProcess() {
     if (pythonProcess && !pythonProcess.killed) {
         console.log('正在关闭后端服务...');
-        pythonProcess.kill();
+        // 用 taskkill 强制结束整个进程树，避免残留
+        exec(`taskkill /pid ${pythonProcess.pid} /T /F`, (err) => {
+            if (err) {
+                // 如果 taskkill 失败，回退到普通的 kill
+                try { pythonProcess.kill(); } catch (e) {}
+            }
+        });
         pythonProcess = null;
     }
 }
@@ -87,8 +93,8 @@ function killPythonProcess() {
 // ---------- 创建窗口 ----------
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 1100,
-        height: 850,
+        width: 1400,
+        height: 900,
         title: 'RyFit 智能体质分析仪',
         icon: iconPath,
         autoHideMenuBar: true,
@@ -113,6 +119,7 @@ function createWindow() {
     });
 
     mainWindow.loadURL(SERVER_URL);
+
     mainWindow.on('closed', () => { mainWindow = null; });
 }
 
@@ -133,7 +140,6 @@ app.whenReady().then(async () => {
     });
 });
 
-// 正常关闭时确保杀死后端
 app.on('window-all-closed', () => {
     killPythonProcess();
     if (process.platform !== 'darwin') app.quit();
@@ -143,8 +149,6 @@ app.on('before-quit', () => {
     killPythonProcess();
 });
 
-// 捕获主进程退出（包括意外崩溃）时杀死子进程
-// 注意：exit 事件只能执行同步操作，无法执行异步 I/O
 process.on('exit', () => {
     killPythonProcess();
 });

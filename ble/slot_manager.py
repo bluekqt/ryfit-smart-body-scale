@@ -1,13 +1,14 @@
 # ble/slot_manager.py
 from models.user_dao import get_user_by_slot, add_user, get_all_users, delete_user as delete_local_user
 
-
 class SlotManager:
     """管理秤上槽位信息，与本地用户数据库对齐"""
 
     def __init__(self):
         self._slot_info = {}
         self._emit = None          # 由 `inject_emitter` 注入
+        self._a5_expected = 0      # 预期 B5 数量
+        self._a5_received = 0      # 已收到 B5 数量
 
     # ---------- 槽位数据处理 ----------
     def handle_b5(self, info):
@@ -17,7 +18,23 @@ class SlotManager:
             return
         self._slot_info[slot] = info
         self._ensure_fixed_user_exists(slot, info)
+
+        # 如果正在进行 A5 查询，计数并判断是否收齐
+        if self._a5_expected > 0:
+            self._a5_received += 1
+            if self._a5_received >= self._a5_expected:
+                self._a5_expected = 0
+                self._a5_received = 0  # 重置，以便下次查询
+                # 收齐后推送一次，同时也会在 _push_occupied 中再次推送，但无所谓
         self._push_occupied()
+
+    def on_a5_response(self, count):
+        """A5 应答到达，count 为秤即将发送的 B5 数量"""
+        self._a5_expected = count or 0
+        self._a5_received = 0
+        # 如果 count 为 0，立即推送当前槽位信息（可能为空）
+        if self._a5_expected == 0:
+            self._push_occupied()
 
     def remove_slot(self, slot):
         """移除本地记录的槽位"""
@@ -46,9 +63,6 @@ class SlotManager:
 
     def clean_orphaned_fixed_users(self):
         """删除本地存在但秤上已没有的固定用户"""
-         # 如果还没收到过任何 B5 数据，不清除
-        if not self._slot_info:
-            return
         scale_slots = set(self._slot_info.keys())
         local_users = get_all_users()
         for u in local_users:

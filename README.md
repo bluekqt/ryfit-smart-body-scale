@@ -63,21 +63,20 @@ python app.py
 
 ## 🎁 打包成独立 EXE
 
+##  1. 打包 Python 后端
+### 在项目根目录执行，生成 dist/app.exe
 ```bash
-# 1. 打包 Python 后端（在项目根目录执行）
-pyinstaller --onefile --add-data "templates;templates" --add-data "static;static" --hidden-import engineio.async_drivers.gevent --hidden-import bleak.backends.winrt app.py
-
-# 2. 进入 electron 目录
-cd electron
-
-# 3. 安装 Electron 依赖（仅首次需要）
-npm install
-
-# 4. 打包 Electron 安装程序
-npx electron-builder --win
+pyinstaller --onefile --add-data "templates;templates" --add-data "static;static" --hidden-import engineio.async_drivers.threading --hidden-import bleak.backends.winrt app.py
 ```
 
-生成的文件在 `electron/dist/` 目录下。
+##   2. 打包 Electron 安装程序
+```bash
+cd electron
+npm install
+npm run build
+```
+
+生成的可执行安装包位于 `electron/dist/` 目录下。
 
 ---
 

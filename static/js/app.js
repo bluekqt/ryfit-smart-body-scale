@@ -460,9 +460,50 @@ function openRegisterModal() {
     Modal.show({ message: '蓝牙未连接，无法注册新用户', type: 'warning' });
     return;
   }
-  document.getElementById('registerModal').style.display = 'flex';
+
+  const regBtn = document.getElementById('registerBtn');
+
+  // 如果按钮已经被禁用，说明正在查询中，避免重复点击
+  if (regBtn.style.pointerEvents === 'none') return;
+
+  // 禁用按钮并添加悬浮提示
+  regBtn.style.pointerEvents = 'none';
+  regBtn.classList.add('btn-disabled');
+  regBtn.title = '正在读取秤上槽位信息，请稍候...';
+
+  // 发送 A5 查询
   fetch('/api/query_slots');
+
+  let resolved = false;
+  const onOccupiedUpdate = (data) => {
+    if (resolved) return;
+    resolved = true;
+    window.socket.off('occupied_slots_update', onOccupiedUpdate);
+    // 恢复按钮
+    regBtn.style.pointerEvents = '';
+    regBtn.classList.remove('btn-disabled');
+    regBtn.title = '需要蓝牙连接';
+    // 打开注册弹窗，此时 occupiedSlots 已是最新
+    document.getElementById('registerModal').style.display = 'flex';
+    updateSlotSelect();
+  };
+
+  window.socket.on('occupied_slots_update', onOccupiedUpdate);
+
+  // 超时保护：3秒后如果还没收到更新，恢复按钮并仍然打开弹窗（可能槽位数据不是最新）
+  setTimeout(() => {
+    if (!resolved) {
+      window.socket.off('occupied_slots_update', onOccupiedUpdate);
+      regBtn.style.pointerEvents = '';
+      regBtn.classList.remove('btn-disabled');
+      regBtn.title = '需要蓝牙连接';
+      document.getElementById('registerModal').style.display = 'flex';
+      updateSlotSelect();
+      console.warn('槽位查询超时，显示的槽位状态可能不是最新');
+    }
+  }, 3000);
 }
+
 function closeRegisterModal() { document.getElementById('registerModal').style.display = 'none'; }
 
 document.getElementById('registerForm').addEventListener('submit', async (e) => {

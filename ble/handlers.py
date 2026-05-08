@@ -51,11 +51,15 @@ class NotificationHandler:
         # FB 应答类
         fb = parse_fb(raw)
         if fb:
-            # 通过回调通知（如有外部等待，如 A1/A2）
+            resp_type, value = fb
+            if resp_type == 'A5_RESPONSE':
+                # value 为 B5 包数量
+                self.slot_manager.on_a5_response(value)
+            # 调用外部 FB 回调（用于同步等待 A1/A2 等）
             if self._fb_callback:
                 self._fb_callback(fb)
             # 需要 ACK 的 FB 类型
-            if fb[0] in ('A5_RESPONSE', 'A2_RESPONSE', 'A1_RESPONSE', 'C0_RESPONSE'):
+            if resp_type in ('A5_RESPONSE', 'A2_RESPONSE', 'A1_RESPONSE', 'C0_RESPONSE'):
                 self._ack(raw)
 
     def _ack(self, raw):
