@@ -2,12 +2,13 @@
 
 > **脱离官方 App，独立使用的体脂秤桌面应用**  
 > 通过逆向工程完整破解 云悦(RyFit) 智能体质分析仪的私有蓝牙协议，实现多用户管理、实时数据采集、历史同步和健康分析报告。  
+> 重构采用前后端分离架构，蓝牙子系统模块化，引入测量状态机、WebSocket 双向直连，界面采用流体排版自适应所有分辨率。
 
 ---
 
 ## 🚀 功能特色
 
-- 📡 **蓝牙自动连接与休眠唤醒**：自动连接设备，断线重连、心跳维持，空闲10分钟自动休眠，一键唤醒
+- 📡 **蓝牙自动连接与休眠唤醒**：自动连接设备，断线重连、心跳维持，空闲 10 分钟自动休眠，一键唤醒
 - 👨‍👩‍👧‍👦 **多用户管理**：
   - **家庭成员**：绑定秤上用户编号（P1-P8），数据永久保存在秤内，可离线自动识别
   - **本地用户**：不占用秤内编号，数据仅保存在本地，可随时升级为家庭成员
@@ -24,6 +25,7 @@
 - 🔐 **开发者面板**：通过 Shift + 点击标题打开，支持写入设备码等高级功能
 - 🛡️ **稳定可靠的测量流程**：自动补发 C0 解决休眠后无法测量；测量超时、失败时弹出独立对话框引导重试；称重进度清晰，大字体重 + 小字提示，报告展示时“再次测量”按钮自然出现
 - 🖥️ **Electron 桌面窗口**：打包成独立安装程序，双击即用，无需 Python 环境
+- 🎨 **全分辨率自适应**：采用 Fluid Typography 流体排版，手机、平板、桌面、Electron 窗口均自动适配
 
 ---
 
@@ -85,7 +87,7 @@ npx electron-builder --win
 |------|------|
 | 后端 | Python 3.10+, Flask, Flask-SocketIO, Bleak |
 | 数据库 | SQLite（内置，无需额外安装） |
-| 前端 | HTML5, CSS3, JavaScript, Socket.IO |
+| 前端 | HTML5, CSS3, JavaScript, Socket.IO（Fluid Typography 流体排版） |
 | 桌面 | Electron |
 | 打包 | PyInstaller, electron-builder |
 
@@ -113,7 +115,7 @@ npx electron-builder --win
 ## 📂 项目结构
 ```
 ryfit/
-├── app.py                    # Flask 主程序，路由与 WebSocket 事件转发（精简）
+├── app.py                    # Flask 主程序，路由与 WebSocket 事件转发
 ├── config.py                 # 全局配置（蓝牙、数据库、超时、测量阈值等）
 ├── requirements.txt
 ├── models/                   # 数据访问层
@@ -121,7 +123,7 @@ ryfit/
 │   ├── user_dao.py           # 用户 CRUD
 │   ├── measurement_dao.py    # 测量记录 CRUD
 │   └── settings_dao.py       # 全局设置存取
-├── ble/                      # 蓝牙子系统（彻底模块化，无事件总线）
+├── ble/                      # 蓝牙子系统（模块化，无事件总线）
 │   ├── __init__.py           # 对外统一接口，注入 Socket.IO emitter
 │   ├── constants.py          # 蓝牙状态、测量阶段与事件常量
 │   ├── protocol.py           # 协议解析与指令构造（纯函数）
@@ -130,17 +132,17 @@ ryfit/
 │   ├── session.py            # 测量会话（状态机、自动 C0、数据校验与存储）
 │   ├── slot_manager.py       # 槽位查询、自动创建固定用户、孤立清理
 │   ├── sync_manager.py       # 历史同步（重试、避让测量）
-│   └── handlers.py           # 数据分发器（将原始包路由至 session/sync/slot）
+│   └── handlers.py           # 数据分发器
 ├── static/
 │   ├── css/
-│   │   ├── style.css
-│   │   └── user.css
+│   │   ├── style.css         # Fluid Typography 全局样式
+│   │   └── user.css          # Fluid Typography 测量页样式
 │   ├── js/
 │   │   ├── api.js            # REST API 封装
 │   │   ├── modal.js          # 弹窗组件
-│   │   ├── status.js         # 仅处理蓝牙连接指示器
+│   │   ├── status.js         # 蓝牙连接指示器
 │   │   ├── app.js            # 首页逻辑
-│   │   └── user.js           # 测量页完整状态机（超时弹窗、自动重试引导）
+│   │   └── user.js           # 测量页状态机（超时弹窗、自动重试引导）
 │   └── socket.io.min.js      # Socket.IO 客户端
 ├── templates/
 │   ├── base.html
@@ -163,8 +165,8 @@ ryfit/
 
 ## 📝 更新日志
 
-- **v2.1**：测量流程深度优化——自动补发 C0 解决休眠后无法测量；前端超时/失败改用模态框引导重试；称重界面大字体重+小字提示，报告区“再次测量”按钮自动显隐；彻底移除事件总线，WebSocket 直连，各模块直接推送；同步机制增加重试与测量避让，防止误删本地用户。
-- **v2.0**：重构架构，蓝牙子系统拆分为 session / slot / sync / handlers，引入测量状态机；数据存储改为 SQLite，增加数据导入/导出、用户编辑/升级、CSV 备份、空闲休眠与唤醒、星级评分与分析图表增强等功能。
+- **v2.1**：蓝牙子系统重构为 session / sync / slot / handlers 分层架构；移除事件总线改为 WebSocket 直连；新增测量状态机，自动补发 C0 解决休眠唤醒；前端超时/失败改用模态框引导重试；UI 升级为 Fluid Typography 流体排版，全分辨率自适应；Electron 窗口动态适配系统缩放；修复 D2 重量解析错误；同步机制增强测量避让与重试。
+- **v2.0**：重构架构，蓝牙子系统模块化；数据存储改为 SQLite，增加数据导入/导出、用户编辑/升级、CSV 备份、空闲休眠与唤醒、星级评分与分析图表增强等功能。
 - **v1.x**：完整的蓝牙协议破解及桌面应用开发；多用户槽位管理；游客快速称重；自动匹配与历史同步；前端界面优化。
 
 ---
