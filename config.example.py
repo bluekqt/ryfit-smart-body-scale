@@ -39,3 +39,13 @@ A1_RESPONSE_TIMEOUT = 2.0           # 激活槽位等待应答 (秒)
 # ---- Flask ----
 FLASK_HOST = "0.0.0.0"
 FLASK_PORT = 5000
+
+# 体成分数据包全部为0时的判定阈值（小于等于该值视为无效）
+MEASUREMENT_VALID_FAT_MIN = 0.0
+MEASUREMENT_VALID_WATER_MIN = 0.0
+MEASUREMENT_VALID_MUSCLE_MIN = 0.0
+MEASUREMENT_VALID_BONE_MIN = 0.0
+MEASUREMENT_VALID_BMR_MIN = 0
+
+# ---- 新增：D2 数据包压制时间（秒） ----
+SUPPRESS_D2_AFTER_C0 = 1.0          # 发送 C0 后忽略 D2 的时长
