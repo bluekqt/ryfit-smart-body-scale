@@ -1,10 +1,10 @@
 // static/js/status.js
-// 蓝牙状态统一管理（用于所有页面）
+// 蓝牙状态统一管理（用于所有页面，仅负责连接状态指示器）
 const BleStatus = (() => {
   let currentState = 'disconnected';
   let pollTimer = null;
 
-  // 更新所有页面上的状态文字
+  // 更新所有页面上的蓝牙状态文字（仅 .ble-status-text 元素）
   function updateUI(state) {
     currentState = state;
     document.querySelectorAll('.ble-status-text').forEach(el => {
@@ -21,20 +21,6 @@ const BleStatus = (() => {
           break;
       }
     });
-
-    // 测量页特有的元素（如果存在）
-    const remeasureBtn = document.getElementById('remeasureBtn');
-    if (remeasureBtn) remeasureBtn.disabled = (state !== 'ready');
-
-    const statusText = document.getElementById('statusText');
-    const statusHint = document.getElementById('statusHint');
-    if (state === 'ready') {
-      if (statusText) statusText.innerText = '⏳ 请站上秤，等待测量完成...';
-      if (statusHint) statusHint.innerText = '蓝牙已连接';
-    } else {
-      if (statusText) statusText.innerText = '当前仅可查看历史记录';
-      if (statusHint) statusHint.innerText = '🔌 蓝牙未连接';
-    }
   }
 
   // 从 API 获取最新状态并更新 UI（兜底）
@@ -71,21 +57,21 @@ const BleStatus = (() => {
   async function wake() {
     try {
       await API.wakeBLE();
-      Modal.show({ message: '正在唤醒设备,请稍候...', type: 'info', closable: false });
+      Modal.show({ message: '请尝试激活设备,正在连接设备,请稍候...', type: 'info', closable: false });
       const timer = setInterval(async () => {
         const data = await API.getBLEStatus();
         if (data.state === 'ready') {
           clearInterval(timer);
           Modal.hide();
-          Modal.show({ message: '设备已唤醒', type: 'success', duration: 2000 });
+          Modal.show({ message: '设备已连接', type: 'success', duration: 1000 });
         }
       }, 2000);
     } catch (e) {
-      Modal.show({ message: '唤醒失败', type: 'error', duration: 2000 });
+      Modal.show({ message: '连接失败,请重试', type: 'error', duration: 2000 });
     }
   }
 
-  //  DOM 加载完成后再启动轮询，确保元素存在
+  // DOM 加载完成后再启动轮询，确保元素存在
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', startPolling);
   } else {

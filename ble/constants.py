@@ -13,15 +13,16 @@ STATE_READY = "ready"
 STATE_LOST = "lost"
 STATE_SLEEPING = "sleeping"
 
-# 测量阶段
-PHASE_WEIGHING = "weighing"
-PHASE_ANALYZING = "analyzing"
-PHASE_DONE = "done"
-PHASE_ERROR = "error"
+# 测量阶段（驱动前端 UI）
+PHASE_IDLE = "idle"             # 等待上秤
+PHASE_WEIGHING = "weighing"     # 正在称重（D2 实时数据）
+PHASE_ANALYZING = "analyzing"   # 正在分析（收到 Packet1 后）
+PHASE_DONE = "done"             # 测量完成（有效 Packet2）
+PHASE_ERROR = "error"           # 测量失败（无效 Packet2）
 
-# 事件类型
+# 事件类型（WebSocket 推送用）
 EVENT_BLE_STATE = "ble_state"
-EVENT_STATUS = "status"
+EVENT_MEASUREMENT_PROGRESS = "measurement_progress"
 EVENT_PACKET1 = "packet1"
 EVENT_FULL_RESULT = "full_result"
 EVENT_SLOT_INFO = "slot_info"

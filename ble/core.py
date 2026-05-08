@@ -4,21 +4,41 @@ import struct
 import time
 from bleak import BleakClient
 from . import constants as const
-from .event_bus import emit, subscribe
-from .state_machine import BLEStateMachine
 from .protocol import make_time_sync, make_ack
 from config import (
     BLE_DEVICE_ADDRESS, BLE_CONNECT_TIMEOUT, BLE_RECONNECT_DELAY,
     BLE_HEARTBEAT_INTERVAL, BLE_IDLE_SLEEP_SECONDS
 )
 
+# 连接状态机
+from .state_machine import BLEStateMachine
 state_machine = BLEStateMachine()
+
 ble_client = None
 ble_loop = None
 _heartbeat_task = None
-_idle_monitor_task = None          # 空闲监控任务
+_idle_monitor_task = None
 _last_user_activity = time.time()
 _connection_start_time = None
+
+# 数据接收回调
+_notification_callback = None
+
+# 时间同步事件（本地 asyncio.Event）
+_time_sync_event = None
+
+# 蓝牙就绪回调（外部注册，用于触发同步等）
+_on_ready_callback = None
+
+def set_notification_callback(callback):
+    """注册数据接收回调。callback 接收 bytes 参数"""
+    global _notification_callback
+    _notification_callback = callback
+
+def set_on_ready_callback(callback):
+    """注册蓝牙连接就绪后的回调（异步函数）"""
+    global _on_ready_callback
+    _on_ready_callback = callback
 
 def update_activity():
     """用户操作时调用，重置空闲计时器。线程安全，仅更新时间戳"""
@@ -77,47 +97,24 @@ async def heartbeat_loop():
                 print(f"[BLE] 心跳发送失败: {e}")
                 break
 
-def notification_handler(sender, data):
-    from .protocol import (
-        parse_d2, parse_packet1, parse_packet2, parse_b5, parse_fb
-    )
+def _internal_notification_handler(sender, data):
+    """内部通知处理——转发给外部注册的回调，并处理时间同步应答"""
+    global _notification_callback, _time_sync_event
     raw = bytes(data)
+    # 时间同步应答
     if len(raw) == 2 and raw[:2] == b'\xFB\xF8':
-        emit('time_sync_ok')
+        if _time_sync_event:
+            _time_sync_event.set()
+        # 也传给外部回调（如需要）
+        if _notification_callback:
+            _notification_callback(raw)
         return
     print(f"[BLE]  ← 收到: {raw.hex()}")
-    d2 = parse_d2(raw)
-    if d2:
-        emit('d2_received', weight=d2['weight'])
-        return
-    p1 = parse_packet1(raw)
-    if p1:
-        emit('packet1_received', p1=p1)
-        if ble_client and ble_client.is_connected:
-            asyncio.ensure_future(ble_client.write_gatt_char(const.NOTIFY_UUID, make_ack(raw), response=False))
-        return
-    p2 = parse_packet2(raw)
-    if p2:
-        emit('packet2_received', p2=p2)
-        if ble_client and ble_client.is_connected:
-            asyncio.ensure_future(ble_client.write_gatt_char(const.NOTIFY_UUID, make_ack(raw), response=False))
-        return
-    b5 = parse_b5(raw)
-    if b5:
-        emit('slot_info', info=b5)
-        if ble_client and ble_client.is_connected:
-            asyncio.ensure_future(ble_client.write_gatt_char(const.NOTIFY_UUID, make_ack(raw), response=False))
-        return
-    fb = parse_fb(raw)
-    if fb:
-        emit('fb_response', resp=fb)
-        if fb[0] in ('A5_RESPONSE', 'A2_RESPONSE'):
-            if ble_client and ble_client.is_connected:
-                asyncio.ensure_future(ble_client.write_gatt_char(const.NOTIFY_UUID, make_ack(raw), response=False))
-        return
+    if _notification_callback:
+        _notification_callback(raw)
 
 async def connect_ble():
-    global ble_client, ble_loop, _heartbeat_task, _idle_monitor_task, _connection_start_time
+    global ble_client, ble_loop, _heartbeat_task, _idle_monitor_task, _connection_start_time, _time_sync_event
     ble_loop = asyncio.get_running_loop()
     while True:
         if not state_machine.can_auto_reconnect:
@@ -131,54 +128,49 @@ async def connect_ble():
             ble_client = client
             state_machine.transition_to(const.STATE_CONNECTING)
             print("[BLE] 蓝牙已连接，订阅通知...")
-            await client.start_notify(const.NOTIFY_UUID, notification_handler)
+            await client.start_notify(const.NOTIFY_UUID, _internal_notification_handler)
             print("[BLE] 通知订阅完成")
             await asyncio.sleep(3)
 
+            # 发送时间同步并等待应答
+            _time_sync_event = asyncio.Event()
             print("[BLE] 发送时间同步")
             await client.write_gatt_char(const.NOTIFY_UUID, make_time_sync(), response=False)
-            sync_ok = asyncio.Event()
-            def on_sync_ok():
-                sync_ok.set()
-            subscribe('time_sync_ok', on_sync_ok)
             try:
-                await asyncio.wait_for(sync_ok.wait(), timeout=4.5)
+                await asyncio.wait_for(_time_sync_event.wait(), timeout=4.5)
                 print("[BLE] 时间同步成功")
             except asyncio.TimeoutError:
                 print("[BLE] ⚠ 时间同步未收到应答，假定已就绪")
+            _time_sync_event = None
 
             state_machine.transition_to(const.STATE_READY)
             _connection_start_time = time.time()
-
-            # 启动首次同步
-            from .service import sync_history, first_sync_done
-            if not first_sync_done:
-                asyncio.create_task(sync_history())
 
             # 启动心跳
             if _heartbeat_task:
                 _heartbeat_task.cancel()
             _heartbeat_task = asyncio.create_task(heartbeat_loop())
 
-            # 启动空闲监控（只更新时间戳，不创建新任务）
+            # 启动空闲监控
             if _idle_monitor_task:
                 _idle_monitor_task.cancel()
             _idle_monitor_task = asyncio.create_task(_idle_monitor())
-            update_activity()   # 设置初始活动时间
+            update_activity()
+
+            # 调用就绪回调（例如启动历史同步）
+            if _on_ready_callback:
+                asyncio.create_task(_on_ready_callback())
 
             while ble_client and ble_client.is_connected:
                 await asyncio.sleep(1)
 
+            # 连接丢失处理
             if state_machine.state != const.STATE_SLEEPING:
-                from .service import first_sync_done
-                first_sync_done = False
                 state_machine.transition_to(const.STATE_LOST)
                 print("[BLE] 连接丢失，稍后重连...")
 
         except Exception as e:
             if state_machine.state != const.STATE_SLEEPING:
-                from .service import first_sync_done
-                first_sync_done = False
                 state_machine.transition_to(const.STATE_LOST)
                 print(f"[BLE] 连接异常: {e}")
             ble_client = None
