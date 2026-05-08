@@ -1,6 +1,6 @@
 {
   "name": "ryfit-pcapp",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "RyFit 智能体质分析仪桌面应用",
   "author": "RyFit",
   "main": "main.js",
@@ -22,8 +22,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerIcon": "icon.ico",
-      "uninstallerIcon": "icon.ico"
+      "installerIcon": "../static/ryfit-scale-icon.ico",
+      "uninstallerIcon": "../static/ryfit-scale-icon.ico"
     },
     "win": {
       "target": "nsis"
