@@ -44,7 +44,7 @@
     </div>
 
     {% if user.mode != 'test' %}
-    <h3>📜 历史记录</h3>
+    <h3 class="table-history">📜 历史记录</h3>
     <div class="table-wrapper" style="max-height: 420px; overflow-y: auto; border: 1px solid #ddd; border-radius: 8px;">
         <table id="historyTable">
             <thead class="sticky-header">
@@ -67,8 +67,7 @@
         </table>
     </div>
     <div style="text-align: center; margin-top: 8px;">
-        <button id="deleteSelectedBtn" onclick="confirmDelete()" disabled
-            style="padding: 6px 20px; background: #e74c3c; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
+        <button id="deleteSelectedBtn" onclick="confirmDelete()" disabled>
             删除选中
         </button>
     </div>
